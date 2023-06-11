@@ -1,0 +1,270 @@
+AWSTemplateFormatVersion: 2010-09-09
+Transform:
+  - AWS::Serverless-2016-10-31
+
+Description: "Nuxt 3 on Lambda with SSR"
+
+Parameters:
+  DomainName:
+    Type: String
+    Description: "The domain name of website"
+  HostedZoneId:
+    Type: String
+    Description: "The Route53 hosted zone ID used for the domain"
+    Default: ""
+  AcmCertificateArn:
+    Type: String
+    Description: "The certificate arn for the domain name provided"
+  CloudFrontPriceClass:
+    Type: String
+    Description: "The price class for CloudFront distribution"
+    Default: "PriceClass_100"
+    AllowedValues:
+      - PriceClass_100
+      - PriceClass_200
+      - PriceClass_All
+
+Conditions:
+  IsHostedZoneIdProvided: !Not [!Equals [!Ref HostedZoneId, ""]]
+
+Resources:
+
+  ##
+  # DNS records
+  ##
+
+  DnsRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: IsHostedZoneIdProvided
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref DomainName
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt Distribution.DomainName
+        HostedZoneId: "Z2FDTNDATAQYW2" # CloudFront has a fixed hosted zone id
+
+  ##
+  # S3 bucket for static objects
+  ##
+
+  Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-${AWS::Region}"
+      AccessControl: Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref Bucket
+      PolicyDocument: 
+        Statement: 
+          - Effect: "Allow"
+            Action: "s3:GetObject"
+            Resource: !Sub "arn:aws:s3:::${Bucket}/*"
+            Principal: 
+              AWS: !Sub 'arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity ${OriginAccessIdentity}'
+
+  ##
+  # CloudFront CDN
+  ##
+
+  OriginAccessIdentity:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: !Ref AWS::StackName
+
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: 'true'
+        Comment: !Ref AWS::StackName
+        HttpVersion: http2
+        Origins:
+          - Id: static
+            DomainName: !Sub "${Bucket}.s3.${AWS::Region}.amazonaws.com"
+            S3OriginConfig:
+              OriginAccessIdentity: !Sub origin-access-identity/cloudfront/${OriginAccessIdentity}
+          - Id: ssr
+            DomainName: !Sub "${HttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+            OriginPath: ""
+            OriginCustomHeaders:
+              - HeaderName: X-OriginAccessIdentity
+                HeaderValue: !Ref OriginAccessIdentity
+            CustomOriginConfig:
+              HTTPSPort: 443
+              OriginProtocolPolicy: https-only
+              OriginSSLProtocols: 
+                - TLSv1.2
+        DefaultCacheBehavior:
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          TargetOriginId: ssr
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # CachingOptimized
+          ViewerProtocolPolicy: redirect-to-https
+          ResponseHeadersPolicyId: 67f7725c-6f97-4210-82d7-5512b31e9d03 # SecurityHeadersPolicy
+        CustomErrorResponses:
+          - ErrorCachingMinTTL: 86400 # cache errors for 24h
+            ErrorCode: 403 # object not found in bucket
+            ResponseCode: 404
+            ResponsePagePath: /404
+        CacheBehaviors:
+          - PathPattern: /_nuxt/*
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+            TargetOriginId: static
+            CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # CachingOptimized
+            ViewerProtocolPolicy: redirect-to-https
+            ResponseHeadersPolicyId: 67f7725c-6f97-4210-82d7-5512b31e9d03 # SecurityHeadersPolicy
+          - PathPattern: /favicon.ico
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+            TargetOriginId: static
+            CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # CachingOptimized
+            ViewerProtocolPolicy: redirect-to-https
+            ResponseHeadersPolicyId: 67f7725c-6f97-4210-82d7-5512b31e9d03 # SecurityHeadersPolicy
+          - PathPattern: /robots.txt
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+            TargetOriginId: static
+            CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # CachingOptimized
+            ViewerProtocolPolicy: redirect-to-https
+            ResponseHeadersPolicyId: 67f7725c-6f97-4210-82d7-5512b31e9d03 # SecurityHeadersPolicy
+          - PathPattern: /api/*
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+              - PUT
+              - PATCH
+              - POST
+              - DELETE
+            TargetOriginId: ssr
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # CachingDisabled
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # AllViewerExceptHostHeader
+            ViewerProtocolPolicy: redirect-to-https
+            ResponseHeadersPolicyId: 67f7725c-6f97-4210-82d7-5512b31e9d03 # SecurityHeadersPolicy
+        PriceClass: !Ref CloudFrontPriceClass
+        Aliases:
+          - !Ref DomainName
+        ViewerCertificate:
+          AcmCertificateArn: !Ref AcmCertificateArn
+          SslSupportMethod: sni-only
+
+  ##
+  # HTTP API handler for SSR
+  ##
+
+  AccessLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 30
+      LogGroupName: !Sub "/aws/apigateway/${AWS::StackName}"
+
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      Name: !Ref AWS::StackName
+      StageName: $default
+      AccessLogSettings:
+        DestinationArn: !GetAtt AccessLogs.Arn
+        Format: '$context.identity.sourceIp $context.identity.caller $context.identity.user [$context.requestTime] "$context.httpMethod $context.resourcePath $context.protocol" $context.status $context.responseLength $context.requestId $context.extendedRequestId'
+
+  HttpApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Ref AWS::StackName
+      CodeUri: .output/server/
+      Handler: index.handler
+      Runtime: nodejs16.x
+      Architectures:
+        - x86_64
+      MemorySize: 256
+      Timeout: 15
+      Tracing: Active
+      Environment:
+        Variables:
+          HEADER_CONTROL_NAME: X-OriginAccessIdentity
+          HEADER_CONTROL_VALUE: !Ref OriginAccessIdentity
+          DYNAMODB_TABLE: !Ref DynamoDBTable
+          SQS_QUEUE_URL: !GetAtt SQSQueue.QueueUrl
+          EVENT_BRIDGE_BUS: !Ref EventBridgeBus
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DynamoDBTable
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt SQSQueue.QueueName
+        - EventBridgePutEventsPolicy:
+            EventBusName: !Ref EventBridgeBus
+      Events:
+        ProxyResource:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: $default
+            Method: any
+
+  ##
+  # Extra
+  ##
+
+  DynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties: 
+      TableName: !Ref AWS::StackName
+      AttributeDefinitions: 
+        - AttributeName: id
+          AttributeType: S
+      KeySchema: 
+        - AttributeName: id
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+  
+  SQSQueue:
+    Type: AWS::SQS::Queue
+    Properties: 
+      QueueName: !Ref AWS::StackName
+  
+  EventBridgeBus:
+    Type: AWS::Events::EventBus
+    Properties: 
+      Name: !Ref AWS::StackName
+
+Outputs:
+  S3Bucket:
+    Description: "The S3 bucket that contains static files"
+    Value: !Ref Bucket
+  CloudFrontDistribution:
+    Description: "The CloudFront distribution in front of the S3 bucket"
+    Value: !Ref Distribution
+  WebsiteUrl:
+    Description: "The website URL"
+    Value: !Sub "https://${DomainName}/"
+  DynamoDBTable:
+    Description: "The DynamoDB table name"
+    Value: !Ref DynamoDBTable
+  SQSQueueUrl:
+    Description: "The SQS queue URL"
+    Value: !GetAtt SQSQueue.QueueUrl
+  SQSQueueName:
+    Description: "The SQS queue name"
+    Value: !GetAtt SQSQueue.QueueName
+  EventBridgeBus:
+    Description: "The EventBridge bus name"
+    Value: !Ref EventBridgeBus

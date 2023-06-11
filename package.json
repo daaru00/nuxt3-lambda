@@ -1,0 +1,22 @@
+{
+  "name": "nuxt-app",
+  "private": true,
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare"
+  },
+  "devDependencies": {
+    "@types/node": "^18",
+    "nuxt": "^3.5.0"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.338.0",
+    "@aws-sdk/client-eventbridge": "^3.338.0",
+    "@aws-sdk/client-sqs": "^3.338.0",
+    "@aws-sdk/credential-providers": "^3.338.0",
+    "@aws-sdk/lib-dynamodb": "^3.338.0"
+  }
+}
