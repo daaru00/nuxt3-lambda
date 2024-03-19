@@ -14,7 +14,7 @@ export default function(): DynamoDBConfig {
       client: DynamoDBDocumentClient.from(
         new DynamoDBClient(useAwsConfig())
       ),
-      tableName: runtimeConfig.dynamodb?.tableName || process.env.DYNAMODB_TABLE
+      tableName: runtimeConfig.dynamodb?.tableName
     }
   }
   return config

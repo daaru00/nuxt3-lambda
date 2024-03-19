@@ -11,7 +11,7 @@ export default function(): SQSClientConfig {
     const runtimeConfig = useRuntimeConfig()
     config = {
       client: new SQSClient(useAwsConfig()),
-      queueUrl: runtimeConfig.sqs?.queueUrl || process.env.SQS_QUEUE_URL,
+      queueUrl: runtimeConfig.sqs?.queueUrl,
     }
   }
   return config

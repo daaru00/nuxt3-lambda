@@ -12,8 +12,8 @@ export default function(): EventBridgeClientConfig {
     const runtimeConfig = useRuntimeConfig()
     config = {
       client: new EventBridgeClient(useAwsConfig()),
-      busName: runtimeConfig.events?.busName || process.env.EVENT_BRIDGE_BUS || 'default',
-      source: runtimeConfig.events?.source || process.env.EVENT_BRIDGE_SOURCE || 'nuxt'
+      busName: runtimeConfig.events?.busName,
+      source: runtimeConfig.events?.source
     }
   }
   return config

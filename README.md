@@ -44,7 +44,7 @@ npm run preview
 
 ## Deploy
 
-Build the application using Lambda preset:
+Build the application before every sam deploy using Lambda preset:
 ```bash
 NITRO_PRESET=aws-lambda npm run build
 ```
@@ -67,3 +67,17 @@ Invalidate CloudFront cache in front of Nuxt3 application:
 ```bash
 aws --profile <profile name> --region <region> cloudfront create-invalidation --distribution-id <distribution id> --paths '/*'
 ```
+
+## Automatic frontend deploy
+
+Build the application before every sam deploy using Lambda preset:
+```bash
+NITRO_PRESET=aws-lambda npm run build
+```
+
+Execute a SAM deploy configuring "AutoDeploy" parameter:
+```bash
+sam deploy --parameter-overrides AutoDeploy=ENABLED
+```
+
+The frontend application files will be uploaded from a Lambda function and, when finished, the CloudFront cache will be invalidated.

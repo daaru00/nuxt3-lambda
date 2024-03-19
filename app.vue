@@ -1,63 +1,44 @@
 <template>
-  <div>
-    <NuxtWelcome />
-    <!-- <p v-if="data">
-      {{ data }}
-    </p> -->
-    <!-- <button @click="putIntoDb">
-      Put into DB
-    </button>
-    <button @click="putEvent">
-      Put event
-    </button>
-    <button @click="sendToQueue">
-      Send to queue
-    </button> -->
+  <div v-show="auth">
+    <LoggedUser />
   </div>
 </template>
 
 <script setup>
-// const { data } = useFetch('/api/echo', {
-//   method: 'POST',
-//   body: JSON.stringify({
-//     test: 'this is a test'
-//   })
-// })
+const auth = useAuth()
 
-// const { data } = useFetch('/api/echo?test=123')
+onMounted(async () => {
+  const token = useToken()
+  if (!token.value) {
+    console.error('token not found in cookies')
 
-// const { data } = useFetch('/api/db/read')
+    const hash = useRouteHash()
+    if (!hash.value) {
+      console.error('hash not found in URL')
+      return await navigateTo('/auth/authorize', {
+        external: true // force page refresh
+      })
+    }
 
-// const putIntoDb = async () => {
-//   const res = await fetch('/api/db/put', {
-//     method: 'POST',
-//     body: JSON.stringify({
-//       test: 'this is a test'
-//     })
-//   })
-//   const data = await res.json()
-//   console.log(data);
-// }
+    token.value = hash.value.id_token
+    return await navigateTo('/', {
+      external: true // force page refresh to remove hash
+    })
+  }
 
-// const putEvent = async () => {
-//   const res = await fetch('/api/event/put', {
-//     method: 'POST',
-//     body: JSON.stringify({
-//       test: 'this is a test'
-//     })
-//   })
-//   const data = await res.json()
-//   console.log(data);
-// }
+  const { data, status } = await useFetch('/api/auth/me', {
+    method: 'GET',
+  })
 
-// const sendToQueue = async () => {
-//   const res = await fetch('/api/queue/send', {
-//     method: 'POST',
-//     body: JSON.stringify({
-//       test: 'this is a test'
-//     })
-//   })
-//   const data = await res.json()
-//   console.log(data);
-// }
+  if (status.value !== 'success') {
+    console.log('invalid uth response', status.value)
+    token.value = ''
+    return await navigateTo('/auth/authorize', {
+      external: true // force page refresh
+    })
+  }
+
+  console.log('logged in', JSON.stringify(data.value))
+  auth.value = data.value
+})
 </script>

@@ -1,18 +1,38 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
+  appConfig: {
+    auth: {
+      cookie: 'id_token'
+    }
+  },
   runtimeConfig: {
     // aws: {
     //   region: 'eu-west-1',
     //   profile: 'default'
     // },
+    origin: {
+      headerName: '',
+      headerValue: '',
+    },
+    auth: {
+      cookie: 'id_token',
+      routes: ['^/api'],
+    },
+    cognito: {
+      authorizeUri: '',
+      redirectUri: '',
+      clientId: '',
+      userPoolId: '',
+    },
     dynamodb: {
-      tableName: process.env.DYNAMODB_TABLE,
+      tableName: '',
     },
     sqs: {
-      queueUrl: process.env.SQS_QUEUE_URL,
+      queueUrl: '',
     },
     events: {
-      busName: process.env.EVENT_BRIDGE_BUS,
+      source: '',
+      busName: '',
     }
   }
 })

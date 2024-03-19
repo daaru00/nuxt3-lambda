@@ -8,13 +8,15 @@ Parameters:
   DomainName:
     Type: String
     Description: "The domain name of website"
+    Default: ""
   HostedZoneId:
     Type: String
     Description: "The Route53 hosted zone ID used for the domain"
     Default: ""
   AcmCertificateArn:
     Type: String
-    Description: "The certificate arn for the domain name provided"
+    Description: "The certificate ARN for the domain name provided, must be in us-east-1 region"
+    Default: ""
   CloudFrontPriceClass:
     Type: String
     Description: "The price class for CloudFront distribution"
@@ -23,9 +25,34 @@ Parameters:
       - PriceClass_100
       - PriceClass_200
       - PriceClass_All
+  DeveloperMode:
+    Type: String
+    Description: "Whether to allow localhost or not"
+    Default: "DISABLED"
+    AllowedValues:
+      - "DISABLED"
+      - "ENABLED"
+  SsrCache:
+    Type: String
+    Description: "Whether to add cache to server side rendering"
+    Default: "DISABLED"
+    AllowedValues:
+      - "DISABLED"
+      - "ENABLED"
+  AutoDeploy:
+    Type: String
+    Description: "Automatically deploy frontend at the end of stack create/update"
+    Default: "DISABLED"
+    AllowedValues:
+      - "DISABLED"
+      - "ENABLED"
 
 Conditions:
+  IsDomainProvided: !Not [!Equals [!Ref DomainName, ""]]
   IsHostedZoneIdProvided: !Not [!Equals [!Ref HostedZoneId, ""]]
+  IsDeveloperModeEnabled: !Equals [!Ref DeveloperMode, "ENABLED"]
+  IsSsrCacheEnabled: !Equals [!Ref SsrCache, "ENABLED"]
+  IsAutoDeployEnabled: !Equals [!Ref AutoDeploy, "ENABLED"]
 
 Resources:
 
@@ -110,7 +137,7 @@ Resources:
             - HEAD
             - OPTIONS
           TargetOriginId: ssr
-          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # CachingOptimized
+          CachePolicyId: !If [IsSsrCacheEnabled, 658327ea-f89d-4fab-a63d-7e88639e58f6, 4135ea2d-6df8-44a3-9df3-4b5a84be39ad] # CachingOptimized or CachingDisabled
           ViewerProtocolPolicy: redirect-to-https
           ResponseHeadersPolicyId: 67f7725c-6f97-4210-82d7-5512b31e9d03 # SecurityHeadersPolicy
         CustomErrorResponses:
@@ -160,31 +187,33 @@ Resources:
             OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # AllViewerExceptHostHeader
             ViewerProtocolPolicy: redirect-to-https
             ResponseHeadersPolicyId: 67f7725c-6f97-4210-82d7-5512b31e9d03 # SecurityHeadersPolicy
+          - PathPattern: /auth/*
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+            TargetOriginId: ssr
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # CachingDisabled
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # AllViewerExceptHostHeader
+            ViewerProtocolPolicy: redirect-to-https
+            ResponseHeadersPolicyId: 67f7725c-6f97-4210-82d7-5512b31e9d03 # SecurityHeadersPolicy
         PriceClass: !Ref CloudFrontPriceClass
         Aliases:
-          - !Ref DomainName
+          - !If [IsDomainProvided, !Ref DomainName, !Ref AWS::NoValue]
         ViewerCertificate:
-          AcmCertificateArn: !Ref AcmCertificateArn
+          AcmCertificateArn: !If [IsDomainProvided, !Ref AcmCertificateArn, !Ref AWS::NoValue]
           SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.2_2021
 
   ##
   # HTTP API handler for SSR
   ##
-
-  AccessLogs:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      RetentionInDays: 30
-      LogGroupName: !Sub "/aws/apigateway/${AWS::StackName}"
 
   HttpApi:
     Type: AWS::Serverless::HttpApi
     Properties:
       Name: !Ref AWS::StackName
       StageName: $default
-      AccessLogSettings:
-        DestinationArn: !GetAtt AccessLogs.Arn
-        Format: '$context.identity.sourceIp $context.identity.caller $context.identity.user [$context.requestTime] "$context.httpMethod $context.resourcePath $context.protocol" $context.status $context.responseLength $context.requestId $context.extendedRequestId'
 
   HttpApiFunction:
     Type: AWS::Serverless::Function
@@ -192,7 +221,7 @@ Resources:
       FunctionName: !Ref AWS::StackName
       CodeUri: .output/server/
       Handler: index.handler
-      Runtime: nodejs16.x
+      Runtime: nodejs18.x
       Architectures:
         - x86_64
       MemorySize: 256
@@ -200,18 +229,12 @@ Resources:
       Tracing: Active
       Environment:
         Variables:
-          HEADER_CONTROL_NAME: X-OriginAccessIdentity
-          HEADER_CONTROL_VALUE: !Ref OriginAccessIdentity
-          DYNAMODB_TABLE: !Ref DynamoDBTable
-          SQS_QUEUE_URL: !GetAtt SQSQueue.QueueUrl
-          EVENT_BRIDGE_BUS: !Ref EventBridgeBus
-      Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref DynamoDBTable
-        - SQSSendMessagePolicy:
-            QueueName: !GetAtt SQSQueue.QueueName
-        - EventBridgePutEventsPolicy:
-            EventBusName: !Ref EventBridgeBus
+          NUXT_ORIGIN_HEADER_NAME: X-OriginAccessIdentity
+          NUXT_ORIGIN_HEADER_VALUE: !Ref OriginAccessIdentity
+          NUXT_COGNITO_USER_POOL_ID: !Ref UserPool
+          NUXT_COGNITO_CLIENT_ID: !Ref UserPoolClient
+          NUXT_COGNITO_AUTHORIZE_URI: !Sub "https://${UserPoolDomain}.auth.${AWS::Region}.amazoncognito.com/oauth2/authorize"
+          NUXT_COGNITO_REDIRECT_URI: !If [IsDomainProvided, !Sub "https://${DomainName}/", !Sub "https://${Distribution.DomainName}/"]
       Events:
         ProxyResource:
           Type: HttpApi
@@ -221,30 +244,198 @@ Resources:
             Method: any
 
   ##
-  # Extra
+  # Static files deploy
   ##
 
-  DynamoDBTable:
-    Type: AWS::DynamoDB::Table
+  PublicFilesLambdaLayer:
+    Type: AWS::Serverless::LayerVersion
+    Condition: IsAutoDeployEnabled
+    Properties:
+      LayerName: !Sub "${AWS::StackName}-public"
+      Description: !Sub "Public files for ${AWS::StackName}"
+      ContentUri: .output/public
+      CompatibleRuntimes:
+        - nodejs18.x
+      CompatibleArchitectures:
+        - x86_64
+
+  StaticFilesDeployFunction:
+    Type: AWS::Serverless::Function
+    Condition: IsAutoDeployEnabled
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-deploy"
+      Runtime: nodejs18.x
+      CodeUri: deploy
+      Handler: index.handler
+      Environment:
+        Variables:
+          S3_BUCKET: !Ref Bucket
+          DISTRIBUTION_ID: !Ref Distribution
+      Policies: 
+        - S3CrudPolicy:
+            BucketName: !Ref Bucket
+        - Statement:
+            - Sid: CloudFrontInvalidate
+              Effect: Allow
+              Action: cloudfront:CreateInvalidation
+              Resource: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}"
+      Layers:
+        - !Ref PublicFilesLambdaLayer
+      Events:
+        StackCreatedOrUpdated:
+          Type: EventBridgeRule
+          Properties:
+            EventBusName: default
+            Pattern:
+              source:
+                - aws.cloudformation
+              detail-type:
+                - CloudFormation Stack Status Change
+              detail:
+                stack-id:
+                  - !Ref AWS::StackId
+                status-details:
+                  status:
+                    - UPDATE_COMPLETE
+                    - CREATE_COMPLETE
+
+  ##
+  # Authentication
+  ##
+
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Ref AWS::StackName
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true # disable user registration
+      AutoVerifiedAttributes:
+        - "email"
+      UsernameAttributes:
+        - "email"
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Mutable: false
+          Required: true
+      MfaConfiguration: "OFF"
+      Policies:
+        PasswordPolicy:
+          RequireLowercase: true
+          RequireSymbols: false
+          RequireNumbers: true
+          MinimumLength: "8"
+          RequireUppercase: true
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: "verified_email"
+            Priority: 1
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Ref AWS::StackName
+      UserPoolId: !Ref UserPool
+      SupportedIdentityProviders:
+        - COGNITO
+      GenerateSecret: false
+      AllowedOAuthFlowsUserPoolClient: true
+      CallbackURLs: 
+        - !If [IsDomainProvided, !Sub "https://${DomainName}/", !Sub "https://${Distribution.DomainName}/"]
+        - !If [IsDeveloperModeEnabled, !Sub "http://localhost:3000/", !Ref AWS::NoValue]
+      LogoutURLs: 
+        - !If [IsDomainProvided, !Sub "https://${DomainName}/", !Sub "https://${Distribution.DomainName}/"]
+        - !If [IsDeveloperModeEnabled, !Sub "http://localhost:3000/", !Ref AWS::NoValue]
+      AllowedOAuthFlows:
+        - implicit # required for "token" response type
+      AllowedOAuthScopes:
+        - aws.cognito.signin.user.admin
+        - openid # required for JWT token response (id_token)
+        - profile
+        - email
+      TokenValidityUnits:
+        IdToken: days
+        AccessToken: days
+        RefreshToken: days
+      IdTokenValidity: 1 # from five minutes to one day
+      AccessTokenValidity: 1 # from five minutes to one day
+      RefreshTokenValidity: 30 # from 60 minutes to 10 years.
+
+  IdentityPool:
+    Type: AWS::Cognito::IdentityPool
+    Properties:
+      IdentityPoolName: !Ref AWS::StackName
+      AllowUnauthenticatedIdentities: false
+      CognitoIdentityProviders:
+        - ClientId: !Ref UserPoolClient
+          ProviderName: !GetAtt UserPool.ProviderName
+
+  CognitoAuthorizedRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Federated: "cognito-identity.amazonaws.com"
+            Action:
+              - "sts:AssumeRoleWithWebIdentity"
+            Condition:
+              "StringEquals":
+                "cognito-identity.amazonaws.com:aud": !Ref IdentityPool
+              "ForAnyValue:StringLike":
+                "cognito-identity.amazonaws.com:amr": authenticated
+      Policies:
+        - PolicyName: "CognitoAuthorizedPolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "cognito-sync:*"
+                  - "cognito-identity:*"
+                Resource: "*"
+
+  IdentityPoolRoleMapping:
+    Type: AWS::Cognito::IdentityPoolRoleAttachment
+    Properties:
+      IdentityPoolId: !Ref IdentityPool
+      Roles:
+        authenticated: !GetAtt CognitoAuthorizedRole.Arn
+
+  UserPoolDomain: 
+    Type: AWS::Cognito::UserPoolDomain 
+    Properties:
+      UserPoolId: !Ref UserPool
+      Domain: !Ref AWS::StackName
+
+  UserPoolUICustomization: 
+    Type: AWS::Cognito::UserPoolUICustomizationAttachment 
+    DependsOn: UserPoolDomain
     Properties: 
-      TableName: !Ref AWS::StackName
-      AttributeDefinitions: 
-        - AttributeName: id
-          AttributeType: S
-      KeySchema: 
-        - AttributeName: id
-          KeyType: HASH
-      BillingMode: PAY_PER_REQUEST
-  
-  SQSQueue:
-    Type: AWS::SQS::Queue
-    Properties: 
-      QueueName: !Ref AWS::StackName
-  
-  EventBridgeBus:
-    Type: AWS::Events::EventBus
-    Properties: 
-      Name: !Ref AWS::StackName
+      UserPoolId: !Ref UserPool
+      ClientId: 'ALL'
+      CSS: |
+        .banner-customizable { 
+          background-color: #6E6F6E;
+          padding: 2em 0;
+        }
+        .background-customizable {
+          background-color: #FAFAFA;
+        }
+        .submitButton-customizable {
+          background-color: #6E6F6E;
+        }
+        .submitButton-customizable:hover {
+          background-color: #6E6F6E;
+        }
+        .inputField-customizable {
+          border-color: #FAFAFA;
+        }
+        .inputField-customizable:focus {
+          border-color: #6E6F6E;
+        }
 
 Outputs:
   S3Bucket:
@@ -255,16 +446,11 @@ Outputs:
     Value: !Ref Distribution
   WebsiteUrl:
     Description: "The website URL"
-    Value: !Sub "https://${DomainName}/"
-  DynamoDBTable:
-    Description: "The DynamoDB table name"
-    Value: !Ref DynamoDBTable
-  SQSQueueUrl:
-    Description: "The SQS queue URL"
-    Value: !GetAtt SQSQueue.QueueUrl
-  SQSQueueName:
-    Description: "The SQS queue name"
-    Value: !GetAtt SQSQueue.QueueName
-  EventBridgeBus:
-    Description: "The EventBridge bus name"
-    Value: !Ref EventBridgeBus
+    Value: !If [IsDomainProvided, !Sub "https://${DomainName}/", !Sub "https://${Distribution.DomainName}/"]
+  DeployLog:
+    Condition: IsAutoDeployEnabled
+    Description: "The CloudWatch log group where deploy log are saved"
+    Value: !Sub "/aws/lambda/${StaticFilesDeployFunction}"
+  ApplicationLog:
+    Description: "The CloudWatch log group where application log are saved"
+    Value: !Sub "/aws/lambda/${HttpApiFunction}"

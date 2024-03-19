@@ -1,9 +1,9 @@
 # Variables
 
-PROFILE := personal
-REGION := eu-south-1
+PROFILE := default
+REGION := us-east-1
 STACK_NAME := nuxt3-ssr
-DISTRIBUTION_ID := E11BF46ZD12UY
+DISTRIBUTION_ID := XXXXXXXXX
 
 # Build
 
@@ -18,16 +18,11 @@ build:
 
 # Deploy
 
-deploy:
-	make build
-	make deploy-static
-	make deploy-sam
+deploy-sam:
+	sam deploy --profile ${PROFILE} --region ${REGION} --stack-name ${STACK_NAME} --resolve-s3 --capabilities CAPABILITY_IAM
 
 deploy-static:
 	aws --profile ${PROFILE} --region ${REGION} s3 cp --recursive .output/public s3://${STACK_NAME}-${REGION}/
-
-deploy-sam:
-	sam deploy
 
 invalidation-cdn:
 	aws --profile ${PROFILE} --region ${REGION} cloudfront create-invalidation --distribution-id ${DISTRIBUTION_ID} --paths '/*'
