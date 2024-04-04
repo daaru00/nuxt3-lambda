@@ -1,6 +1,6 @@
 export default defineEventHandler(async (event) => {
   const url = event.node.req.url || ''
-  if (['/auth/authorize'].includes(url)) {
+  if (['/login', '/logout'].includes(url)) {
     return
   }
   
@@ -20,14 +20,18 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const auth = await useCognitoJwtVerifier(token)
-  if (!auth) {
+  const payload = await useCognitoJwtVerifier(token)
+  if (!payload) {
     throw createError({
       statusCode: 401,
       message: 'Unauthorized',
     })
   }
 
-  console.log('auth', JSON.stringify(auth, null, 2))
-  event.context.auth = auth
+  const caller: AuthenticatedUser = {
+    email: payload.email?.toString() || 'unknown'
+  }
+
+  console.log('auth', JSON.stringify(payload, null, 2))
+  event.context.auth = caller
 })

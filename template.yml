@@ -233,8 +233,13 @@ Resources:
           NUXT_ORIGIN_HEADER_VALUE: !Ref OriginAccessIdentity
           NUXT_COGNITO_USER_POOL_ID: !Ref UserPool
           NUXT_COGNITO_CLIENT_ID: !Ref UserPoolClient
-          NUXT_COGNITO_AUTHORIZE_URI: !Sub "https://${UserPoolDomain}.auth.${AWS::Region}.amazoncognito.com/oauth2/authorize"
+          NUXT_COGNITO_LOGIN_ENDPOINT: !Sub "https://${UserPoolDomain}.auth.${AWS::Region}.amazoncognito.com/login"
+          NUXT_COGNITO_LOGOUT_ENDPOINT: !Sub "https://${UserPoolDomain}.auth.${AWS::Region}.amazoncognito.com/logout"
           NUXT_COGNITO_REDIRECT_URI: !If [IsDomainProvided, !Sub "https://${DomainName}/", !Sub "https://${Distribution.DomainName}/"]
+          NUXT_DYNAMODB_TABLE_NAME: "" 
+          NUXT_SQS_QUEUE_URL: ""
+          NUXT_EVENTS_SOURCE: !Sub "nuxt.${AWS::StackName}"
+          NUXT_EVENTS_BUS_NAME: "default"
       Events:
         ProxyResource:
           Type: HttpApi
@@ -265,7 +270,7 @@ Resources:
     Properties:
       FunctionName: !Sub "${AWS::StackName}-deploy"
       Runtime: nodejs18.x
-      CodeUri: deploy
+      CodeUri: lambda/deploy
       Handler: index.handler
       Environment:
         Variables:

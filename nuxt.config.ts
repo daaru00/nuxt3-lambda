@@ -1,6 +1,7 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
   appConfig: {
+    title: 'Nuxt3 on Lambda',
     auth: {
       cookie: 'id_token'
     }
@@ -19,10 +20,12 @@ export default defineNuxtConfig({
       routes: ['^/api'],
     },
     cognito: {
-      authorizeUri: '',
+      loginEndpoint: '',
+      logoutEndpoint: '',
       redirectUri: '',
       clientId: '',
       userPoolId: '',
+      oauthScope: 'aws.cognito.signin.user.admin openid profile'
     },
     dynamodb: {
       tableName: '',
@@ -32,7 +35,7 @@ export default defineNuxtConfig({
     },
     events: {
       source: '',
-      busName: '',
+      busName: 'default',
     }
   }
 })
