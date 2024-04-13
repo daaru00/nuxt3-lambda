@@ -1,5 +1,5 @@
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
-import { CognitoJwtVerifierSingleUserPool } from 'aws-jwt-verify/cognito-verifier';
+import type { CognitoJwtVerifierSingleUserPool } from 'aws-jwt-verify/cognito-verifier';
 
 interface InternalCognitoJwtVerifier extends CognitoJwtVerifierSingleUserPool<{
   userPoolId: string

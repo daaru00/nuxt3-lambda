@@ -10,10 +10,9 @@ let config: DynamoDBConfig
 export default function(): DynamoDBConfig {
   if (!config) {
     const runtimeConfig = useRuntimeConfig()
+    const xray = useXRay()
     config = {
-      client: DynamoDBDocumentClient.from(
-        new DynamoDBClient(useAwsConfig())
-      ),
+      client: DynamoDBDocumentClient.from(xray.captureAWSClient(new DynamoDBClient(useAwsConfig()))),
       tableName: runtimeConfig.dynamodb?.tableName
     }
   }

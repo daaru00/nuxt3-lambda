@@ -229,6 +229,7 @@ Resources:
       Tracing: Active
       Environment:
         Variables:
+          NUXT_XRAY_TRACKING: 'active'
           NUXT_ORIGIN_HEADER_NAME: X-OriginAccessIdentity
           NUXT_ORIGIN_HEADER_VALUE: !Ref OriginAccessIdentity
           NUXT_COGNITO_USER_POOL_ID: !Ref UserPool

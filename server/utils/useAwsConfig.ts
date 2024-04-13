@@ -1,5 +1,5 @@
 import { fromIni, fromEnv } from "@aws-sdk/credential-providers";
-import { AwsCredentialIdentityProvider } from "@aws-sdk/types";
+import type { AwsCredentialIdentityProvider } from "@aws-sdk/types";
 
 interface AwsConfig {
   region: string
@@ -12,7 +12,7 @@ export default function(): AwsConfig {
     const runtimeConfig = useRuntimeConfig()
     const profile = runtimeConfig.aws?.profile || process.env.AWS_PROFILE || process.env.AWS_DEFAULT_PROFILE;
     config = {
-      region: runtimeConfig.aws?.region || process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION,
+      region: runtimeConfig.aws?.region || process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || '',
       credentials: profile
         ? fromIni({
             profile: profile,

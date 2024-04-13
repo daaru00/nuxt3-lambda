@@ -1,9 +1,4 @@
-# Variables
-
-PROFILE := default
-REGION := us-east-1
-STACK_NAME := nuxt3-ssr
-DISTRIBUTION_ID := XXXXXXXXX
+-include .env
 
 # Build
 
@@ -16,26 +11,31 @@ dev:
 build:
 	NITRO_PRESET=aws-lambda npm run build
 
+clean:
+	rm -rf .nuxt
+	rm -rf .output
+	rm -rf node_modules
+
 # Deploy
 
-deploy-sam:
-	sam deploy --profile ${PROFILE} --region ${REGION} --stack-name ${STACK_NAME} --resolve-s3 --capabilities CAPABILITY_IAM
+deploy-frontend:
+	aws --profile ${AWS_PROFILE} --region ${AWS_REGION} s3 cp --recursive .output/public s3://${STACK_NAME}-${AWS_REGION}/
 
-deploy-static:
-	aws --profile ${PROFILE} --region ${REGION} s3 cp --recursive .output/public s3://${STACK_NAME}-${REGION}/
+deploy-backend:
+	sam deploy --profile ${AWS_PROFILE} --region ${AWS_REGION} --stack-name ${STACK_NAME} --resolve-s3 --capabilities CAPABILITY_IAM
 
 invalidation-cdn:
-	aws --profile ${PROFILE} --region ${REGION} cloudfront create-invalidation --distribution-id ${DISTRIBUTION_ID} --paths '/*'
+	aws --profile ${AWS_PROFILE} --region ${AWS_REGION} cloudfront create-invalidation --distribution-id ${DISTRIBUTION_ID} --paths '/*'
 
 # Monitoring
 
 logs:
-	sam logs --profile ${PROFILE} --region ${REGION} --stack-name ${STACK_NAME} --tail
+	sam logs --profile ${AWS_PROFILE} --region ${AWS_REGION} --stack-name ${STACK_NAME} --tail
 
 # Deleting
 
-empty-bucket:
-	aws --profile ${PROFILE} --region ${REGION} s3 rm s3://${STACK_NAME}-${REGION} --recursive
+delete-frontend:
+	aws --profile ${AWS_PROFILE} --region ${AWS_REGION} s3 rm s3://${STACK_NAME}-${AWS_REGION} --recursive
 
-delete:
-	sam delete
+delete-backend:
+	sam delete --stack-name ${STACK_NAME}

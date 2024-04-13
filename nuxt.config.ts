@@ -7,10 +7,10 @@ export default defineNuxtConfig({
     }
   },
   runtimeConfig: {
-    // aws: {
-    //   region: 'eu-west-1',
-    //   profile: 'default'
-    // },
+    aws: {
+      region: '',
+      profile: ''
+    },
     origin: {
       headerName: '',
       headerValue: '',
@@ -36,6 +36,9 @@ export default defineNuxtConfig({
     events: {
       source: '',
       busName: 'default',
+    },
+    xray: {
+      tracking: '' // set to 'active' to enable
     }
   }
 })

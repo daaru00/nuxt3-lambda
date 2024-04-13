@@ -7,13 +7,13 @@ export default function () {
   }
 
   async function login() {
-    return await navigateTo('/login', {
+    return await navigateTo('/auth/login', {
       external: true // force page refresh for server route hit
     })
   }
 
   async function logout() {
-    return await navigateTo('/logout', {
+    return await navigateTo('/auth/logout', {
       external: true // force page refresh for server route hit
     })
   }

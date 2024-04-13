@@ -1,6 +1,13 @@
 export default defineEventHandler(async (event) => {
+  const xray = useXRay()
+  const subsegment = xray.openSegment('auth')
+
   const url = event.node.req.url || ''
-  if (['/login', '/logout'].includes(url)) {
+  xray.addSegmentAnnotation(subsegment, 'url', url)
+
+  if (['/auth/login', '/auth/logout'].includes(url)) {
+    xray.addSegmentAnnotation(subsegment, 'result', 'skipped')
+    xray.closeSegment(subsegment)
     return
   }
   
@@ -8,12 +15,16 @@ export default defineEventHandler(async (event) => {
   const protectRoutes = runtimeConfig.auth?.routes || ['^/api']
   const isProtected = protectRoutes.some((route: string) => new RegExp(route).test(url)) 
   if (!isProtected) {
+    xray.addSegmentAnnotation(subsegment, 'result', 'skipped')
+    xray.closeSegment(subsegment)
     return
   }
 
   const token = getCookie(event, runtimeConfig.auth?.cookie || 'id_token')
   if (!token) {
-    console.error('Token cookie not found')
+    xray.addSegmentAnnotation(subsegment, 'result', 'not-found')
+    xray.closeSegment(subsegment)
+
     throw createError({
       statusCode: 401,
       message: 'Unauthorized',
@@ -22,16 +33,21 @@ export default defineEventHandler(async (event) => {
 
   const payload = await useCognitoJwtVerifier(token)
   if (!payload) {
+    xray.addSegmentAnnotation(subsegment, 'result', 'invalid')
+    xray.closeSegment(subsegment)
+
     throw createError({
       statusCode: 401,
       message: 'Unauthorized',
     })
   }
 
-  const caller: AuthenticatedUser = {
-    email: payload.email?.toString() || 'unknown'
-  }
+  xray.addSegmentAnnotation(subsegment, 'result', 'valid')
 
-  console.log('auth', JSON.stringify(payload, null, 2))
-  event.context.auth = caller
+  event.context.auth = {
+    email: payload.email?.toString() || 'unknown'
+  } as AuthenticatedUser
+
+  xray.addSegmentMetadata(subsegment, 'user', event.context.auth)
+  xray.closeSegment(subsegment)
 })

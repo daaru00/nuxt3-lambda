@@ -9,8 +9,9 @@ let config: SQSClientConfig
 export default function(): SQSClientConfig {
   if (!config) {
     const runtimeConfig = useRuntimeConfig()
+    const xray = useXRay()
     config = {
-      client: new SQSClient(useAwsConfig()),
+      client: xray.captureAWSClient(new SQSClient(useAwsConfig())),
       queueUrl: runtimeConfig.sqs?.queueUrl,
     }
   }
